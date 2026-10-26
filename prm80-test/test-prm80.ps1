@@ -22,6 +22,7 @@ $logFile = Join-Path $here "test-prm80-log.txt"
 $daemonOut = Join-Path $here "test-prm80-rigctld.txt"
 $culture = [System.Globalization.CultureInfo]::InvariantCulture
 $results = New-Object System.Collections.ArrayList
+$script:wrote = $false
 
 function Log([string]$text) {
     Add-Content -Path $logFile -Value $text -Encoding UTF8
@@ -50,6 +51,8 @@ function Info([string]$name, [string]$detail) {
 if ($Com -eq "") {
     $Com = Read-Host "COM-Port des PRM80 (z. B. COM3)"
 }
+$Com = $Com.Trim()
+if ($Com -match '^\d+$') { $Com = "COM" + $Com }      # "15" -> "COM15"
 if ($LastChannel -lt 0) {
     $LastChannel = [int](Read-Host "Hoechste belegte Kanalnummer im PRM80 (siehe Kanalmanager, z. B. 47)")
 }
@@ -152,6 +155,7 @@ function F([long]$hz) {
 # (RX/TX kommen aus den PLL-Werten des PRM80, also unabhaengig von Hamlib)
 function TestChannel([string]$name, [long]$freq, [string]$shift, [long]$offs, [string]$funcs, [int]$flags,
                      [long]$expRx, [long]$expTx, [bool]$expRev) {
+    $script:wrote = $true
     $set = Cmd ("H {0} {1} {2} {3} {4} {5}" -f $testChan, $freq, $shift, $offs, $funcs, $flags)
     if (-not $set.Ok) { Result $name $false ("Schreiben: RPRT " + $set.Code); return }
     $get = Cmd ("h {0} 1" -f $testChan)
@@ -233,6 +237,9 @@ try {
     if (Test-Path $daemonOut) {
         $reason = @(Get-Content $daemonOut | Where-Object { $_ -match 'prm80_open:|not supported|rig_open.*(error|returning)' } | Select-Object -Last 4)
         foreach ($r in $reason) { Show ("    " + $r) "Red" }
+        if (($reason -join " ") -match 'Invalid configuration|IO error|Communication timed out') {
+            Show ("    -> COM-Port {0} pruefen (richtiger Port? PRM80-Software geschlossen? Geraet an?)" -f $Com) "Yellow"
+        }
     }
 } finally {
     try { $writer.WriteLine("q") } catch { }
@@ -251,10 +258,12 @@ if ($bad -eq 0) {
     Show ("{0} Test(s) fehlgeschlagen." -f $bad) "Red"
 }
 Show ""
-Show ("Testkanal {0}: Bitte in der PRM80-Software mit 'Read from PRM80' pruefen:" -f $testChan)
-Show "  145.6000, Shift -, 600 kHz, Shift Enabled, ohne Reverse, ohne Scan Lock."
-Show "Danach die Sicherung laden und 'Write to PRM80' - dann ist der Testkanal wieder weg."
-Show ""
+if ($script:wrote) {
+    Show ("Testkanal {0}: Bitte in der PRM80-Software mit 'Read from PRM80' pruefen:" -f $testChan)
+    Show "  145.6000, Shift -, 600 kHz, Shift Enabled, ohne Reverse, ohne Scan Lock."
+    Show "Danach die Sicherung laden und 'Write to PRM80' - dann ist der Testkanal wieder weg."
+    Show ""
+}
 Show ("Protokoll: " + $logFile)
 Show ("Ausgabe von rigctld: " + $daemonOut)
 if ($bad -gt 0) { exit 2 }
