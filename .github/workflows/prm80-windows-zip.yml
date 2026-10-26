@@ -39,7 +39,7 @@ jobs:
         cp src/.libs/libhamlib-*.dll hamlib-prm80-win64/
         cp /usr/x86_64-w64-mingw32/lib/libwinpthread-1.dll hamlib-prm80-win64/
         cp /usr/lib/gcc/x86_64-w64-mingw32/*-posix/libgcc_s_seh-1.dll hamlib-prm80-win64/
-        cp rigs/prm80/pysimulprm80.py hamlib-prm80-win64/ || true
+        cp prm80-test/test-prm80.ps1 prm80-test/test-prm80.bat hamlib-prm80-win64/
         git log -1 --format='Hamlib %h %cd' > hamlib-prm80-win64/VERSION.txt
         ls -la hamlib-prm80-win64
     - uses: actions/upload-artifact@v7
