@@ -22,7 +22,7 @@
 #      f
 #      U REV 0
 #
-# Usage: test-prm80.bat                          (asks for the port, finds the last channel)
+# Usage: test-prm80.bat                          (asks for the port and the last channel)
 #        test-prm80.bat -Commands mytest.txt
 #    or: powershell -ExecutionPolicy Bypass -File test-prm80.ps1 -Com COM3 -LastChannel 47
 #
@@ -260,32 +260,12 @@ function RoundTrip([string]$name) {
     Result $name $ok $detail
 }
 
-# The firmware ignores the selection of a channel that does not exist and the
-# channels have no gaps, so the last channel is found by a binary search
-# with "h n" (selects channel n and reports the current channel).
-function FindLastChannel() {
-    $a = Cmd "E 0"
-    if (-not $a.Ok) { return -1 }
-    $lo = 0          # exists
-    $hi = 100        # does not exist
-    while ($hi - $lo -gt 1) {
-        $mid = [int][math]::Floor(($lo + $hi) / 2)
-        $g = Cmd ("h {0} 1" -f $mid)
-        if ($g.Ok -and (Channel $g) -eq $mid) { $lo = $mid } else { $hi = $mid }
-    }
-    $a = Cmd "E 0"
-    return $lo
-}
-
 function SetupChannels() {
     if (-not $needLast) { return }
+    # Hamlib has no command for the number of channels, and the firmware
+    # accepts any channel number 00..99 for "N", so it can't be probed.
     if ($LastChannel -lt 0) {
-        $script:LastChannel = FindLastChannel
-        if ($script:LastChannel -ge 0) {
-            Show ("Last channel in the PRM80: {0} (found by the script)" -f $script:LastChannel)
-        } else {
-            $script:LastChannel = [int](Read-Host "Number of the last channel in the PRM80 (see channel manager, e.g. 47)")
-        }
+        $script:LastChannel = [int](Read-Host "Number of the last channel in the PRM80 (see channel manager, e.g. 47)")
     }
     $script:testChan = $script:LastChannel + 1
     if ($script:testChan -gt 99) {
@@ -369,12 +349,14 @@ function RunStandardTests() {
 
     # Channel with a gap: the firmware would append it after the last one,
     # Hamlib has to refuse it and must not create anything
+    # The firmware also selects a channel that does not exist ("N"), so
+    # "created" is checked with a frequency that is new on every run.
     $gap = [math]::Min($testChan + 5, 99)
     if ($gap -gt $testChan + 1) {
-        $a = Cmd ("H {0} 144900000 0 0 0 0" -f $gap)
+        $mark = 144900000 + 12500 * ((Get-Date).Second % 40)
+        $a = Cmd ("H {0} {1} 0 0 0 0" -f $gap, $mark)
         $b = Cmd ("h {0} 1" -f ($testChan + 1))
-        $c = Channel $b
-        $created = $c -eq ($testChan + 1)
+        $created = (Mhz $b "Freq") -eq $mark
         $what = "not created"
         if ($created) { $what = "was created!" }
         Result ("Channel {0} with a gap refused" -f $gap) ((-not $a.Ok) -and (-not $created)) `
