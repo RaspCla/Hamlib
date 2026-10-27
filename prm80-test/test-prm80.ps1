@@ -143,7 +143,8 @@ function Mhz($answer, [string]$key) {
 }
 
 function Channel($answer) {
-    if ($answer.Text -match 'Channel: (\d+)') { return [int]$Matches[1] }
+    # -cmatch: case sensitive, "get_channel: n" is the echo of the command
+    if ($answer.Text -cmatch '(?m)^Channel: (\d+)') { return [int]$Matches[1] }
     return -1
 }
 
@@ -202,8 +203,22 @@ try {
     TestChannel "Shift +1,6 MHz, Scan-Sperre" 145025000 "+" 1600000 "0" 1 145025000 146625000 $false
     TestChannel "Standard-Shift (Shift 0)" 145750000 "-" 0 "0" 0 145750000 -1 $false
     TestChannel "Ohne Shift" 144800000 "0" 0 "0" 0 144800000 144800000 $false
-    TestChannel "Reverse im Kanal" 145600000 "-" 600000 "80000" 0 145000000 145600000 $true
+    # Frequenz bei "H" = Empfangsfrequenz (wie "h" sie liefert), auch bei Reverse
+    TestChannel "Reverse im Kanal (-)" 145000000 "-" 600000 "80000" 0 145000000 145600000 $true
+    TestChannel "Reverse im Kanal (+)" 145625000 "+" 600000 "80000" 0 145625000 145025000 $true
     TestChannel "Reverse wieder aus" 145600000 "-" 600000 "0" 0 145600000 145000000 $false
+
+    # Kanal mit Luecke: die Firmware wuerde ihn hinter dem letzten anhaengen,
+    # Hamlib muss ablehnen und darf nichts anlegen
+    $gap = [math]::Min($testChan + 5, 99)
+    if ($gap -gt $testChan + 1) {
+        $a = Cmd ("H {0} 144900000 0 0 0 0" -f $gap)
+        $b = Cmd ("h {0} 1" -f ($testChan + 1))
+        $c = Channel $b
+        $created = $c -eq ($testChan + 1)
+        Result ("Kanal {0} mit Luecke abgelehnt" -f $gap) ((-not $a.Ok) -and (-not $created)) `
+            ("RPRT {0}, Kanal {1} {2}" -f $a.Code, ($testChan + 1), $(if ($created) { "wurde angelegt!" } else { "nicht angelegt" }))
+    }
 
     $a = Cmd ("E {0}" -f $testChan)
     $a = Cmd "U REV 1"
