@@ -22,7 +22,7 @@
 #      f
 #      U REV 0
 #
-# Usage: test-prm80.bat                          (asks for port and last channel)
+# Usage: test-prm80.bat                          (asks for the port, finds the last channel)
 #        test-prm80.bat -Commands mytest.txt
 #    or: powershell -ExecutionPolicy Bypass -File test-prm80.ps1 -Com COM3 -LastChannel 47
 #
@@ -46,6 +46,7 @@ $daemonOut = Join-Path $here "test-prm80-rigctld.txt"
 $culture = [System.Globalization.CultureInfo]::InvariantCulture
 $results = New-Object System.Collections.ArrayList
 $script:wrote = $false
+$testChan = -1
 
 function Log([string]$text) {
     Add-Content -Path $logFile -Value $text -Encoding UTF8
@@ -91,14 +92,6 @@ if ($null -ne $commandLines) {
     $cmdText = ($commandLines | Where-Object { -not $_.Trim().StartsWith("#") }) -join "`n"
     $needLast = $cmdText -match '\{NEW\}|\{LAST\}'
 }
-if ($needLast -and $LastChannel -lt 0) {
-    $LastChannel = [int](Read-Host "Number of the last channel in the PRM80 (see channel manager, e.g. 47)")
-}
-$testChan = $LastChannel + 1
-if ($needLast -and $testChan -gt 99) {
-    Write-Host "All 100 channels are used - the test needs a free channel." -ForegroundColor Red
-    exit 1
-}
 if ($Rigctld -eq "") {
     $Rigctld = Join-Path $here "rigctld.exe"
 }
@@ -108,7 +101,7 @@ Set-Content -Path $logFile -Value ("PRM80 Hamlib test " + (Get-Date -Format "yyy
 if ($null -ne $commandLines) {
     Show ("Port {0}, command file {1}" -f $Com, $Commands)
 } else {
-    Show ("Port {0}, last channel {1}, test channel {2} (will be created)" -f $Com, $LastChannel, $testChan)
+    Show ("Port {0}" -f $Com)
 }
 Show "Close the PRM80 control software first. The radio must not transmit."
 Show ""
@@ -265,6 +258,42 @@ function RoundTrip([string]$name) {
     Result $name $ok $detail
 }
 
+# The firmware ignores the selection of a channel that does not exist and the
+# channels have no gaps, so the last channel is found by a binary search
+# with "h n" (selects channel n and reports the current channel).
+function FindLastChannel() {
+    $a = Cmd "E 0"
+    if (-not $a.Ok) { return -1 }
+    $lo = 0          # exists
+    $hi = 100        # does not exist
+    while ($hi - $lo -gt 1) {
+        $mid = [int][math]::Floor(($lo + $hi) / 2)
+        $g = Cmd ("h {0} 1" -f $mid)
+        if ($g.Ok -and (Channel $g) -eq $mid) { $lo = $mid } else { $hi = $mid }
+    }
+    $a = Cmd "E 0"
+    return $lo
+}
+
+function SetupChannels() {
+    if (-not $needLast) { return }
+    if ($LastChannel -lt 0) {
+        $script:LastChannel = FindLastChannel
+        if ($script:LastChannel -ge 0) {
+            Show ("Last channel in the PRM80: {0} (found by the script)" -f $script:LastChannel)
+        } else {
+            $script:LastChannel = [int](Read-Host "Number of the last channel in the PRM80 (see channel manager, e.g. 47)")
+        }
+    }
+    $script:testChan = $script:LastChannel + 1
+    if ($script:testChan -gt 99) {
+        throw "All 100 channels are used - the test needs a free channel."
+    }
+    if ($null -eq $commandLines) {
+        Show ("Test channel {0} will be created after the last channel." -f $script:testChan)
+    }
+}
+
 # ---- Command list -----------------------------------------------------------
 
 function RunCommandList() {
@@ -381,6 +410,7 @@ function RunStandardTests() {
 try {
     $a = Cmd "\get_info"
     Log ("Firmware: " + (Value $a "Info"))
+    SetupChannels
     if ($null -ne $commandLines) {
         RunCommandList
     } else {
@@ -390,7 +420,7 @@ try {
     Result "Run" $false $_.Exception.Message
     # the reason from the output of rigctld (e.g. old firmware)
     Start-Sleep -Milliseconds 500
-    if (Test-Path $daemonOut) {
+    if ($_.Exception.Message -match 'transport connection|Connection to rigctld' -and (Test-Path $daemonOut)) {
         $reason = @(Get-Content $daemonOut | Where-Object { $_ -match 'prm80_open:|not supported|rig_open.*(error|returning)' } | Select-Object -Last 4)
         foreach ($r in $reason) { Show ("    " + $r) "Red" }
         if (($reason -join " ") -match 'Invalid configuration|IO error|Communication timed out') {
