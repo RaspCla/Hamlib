@@ -178,6 +178,41 @@ function TestChannel([string]$name, [long]$freq, [string]$shift, [long]$offs, [s
     Result $name $ok $detail
 }
 
+# "Offset: +600.0000 kHz" -> Hz
+function Offset($answer) {
+    if ($answer.Text -cmatch 'Offset: \+?(-?[0-9.]+) (Hz|kHz|MHz)') {
+        $v = [double]::Parse($Matches[1], $culture)
+        switch ($Matches[2]) { "kHz" { $v *= 1000 } "MHz" { $v *= 1000000 } }
+        return [long][math]::Round($v)
+    }
+    return -1
+}
+
+# Rundlauf: Kanal lesen, das Gelesene unveraendert zurueckschreiben, wieder
+# lesen - der Kanal darf sich dabei nicht aendern (Review Hamlib #2285).
+# Die Scan-Sperre zeigt "h" nicht an, sie wird hier nicht geprueft.
+function RoundTrip([string]$name) {
+    $g1 = Cmd ("h {0} 1" -f $testChan)
+    $rx1 = Mhz $g1 "Freq"
+    $tx1 = Mhz $g1 "txFreq"
+    $rev1 = $g1.Text -match 'Functions:.*\bREV\b'
+    $sign = "0"
+    if ($g1.Text -cmatch 'Shift: ([+-]),') { $sign = $Matches[1] }
+    $offs = Offset $g1
+    $funcs = "0"
+    if ($rev1) { $funcs = "80000" }
+    $set = Cmd ("H {0} {1} {2} {3} {4} 0" -f $testChan, $rx1, $sign, $offs, $funcs)
+    $g2 = Cmd ("h {0} 1" -f $testChan)
+    $rx2 = Mhz $g2 "Freq"
+    $tx2 = Mhz $g2 "txFreq"
+    $rev2 = $g2.Text -match 'Functions:.*\bREV\b'
+    $ok = $set.Ok -and $rx1 -gt 0 -and $rx2 -eq $rx1 -and $tx2 -eq $tx1 -and $rev2 -eq $rev1
+    $detail = "gelesen RX {0} TX {1}{2}, zurueckgeschrieben: RX {3} TX {4}{5}" -f (F $rx1), (F $tx1), `
+        $(if ($rev1) { " REV" } else { "" }), (F $rx2), (F $tx2), $(if ($rev2) { " REV" } else { "" })
+    if (-not $set.Ok) { $detail += " (Schreiben: RPRT " + $set.Code + ")" }
+    Result $name $ok $detail
+}
+
 # ---- Tests ------------------------------------------------------------------
 
 try {
@@ -200,12 +235,15 @@ try {
     Result "Kanal 0 waehlen" ($a.Ok -and (Value $b "Memory#") -eq "0") ("Kanal " + (Value $b "Memory#"))
 
     TestChannel "Neuer Kanal, Shift -600 kHz" 145600000 "-" 600000 "0" 0 145600000 145000000 $false
+    RoundTrip "Rundlauf lesen/schreiben, -600 kHz"
     TestChannel "Shift +1,6 MHz, Scan-Sperre" 145025000 "+" 1600000 "0" 1 145025000 146625000 $false
     TestChannel "Standard-Shift (Shift 0)" 145750000 "-" 0 "0" 0 145750000 -1 $false
     TestChannel "Ohne Shift" 144800000 "0" 0 "0" 0 144800000 144800000 $false
     # Frequenz bei "H" = Empfangsfrequenz (wie "h" sie liefert), auch bei Reverse
     TestChannel "Reverse im Kanal (-)" 145000000 "-" 600000 "80000" 0 145000000 145600000 $true
+    RoundTrip "Rundlauf lesen/schreiben, Reverse (-)"
     TestChannel "Reverse im Kanal (+)" 145625000 "+" 600000 "80000" 0 145625000 145025000 $true
+    RoundTrip "Rundlauf lesen/schreiben, Reverse (+)"
     TestChannel "Reverse wieder aus" 145600000 "-" 600000 "0" 0 145600000 145000000 $false
 
     # Kanal mit Luecke: die Firmware wuerde ihn hinter dem letzten anhaengen,
