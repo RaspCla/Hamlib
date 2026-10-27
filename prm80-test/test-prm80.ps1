@@ -47,6 +47,7 @@ $culture = [System.Globalization.CultureInfo]::InvariantCulture
 $results = New-Object System.Collections.ArrayList
 $script:wrote = $false
 $testChan = -1
+$script:noFreeChannel = $false
 
 function Log([string]$text) {
     Add-Content -Path $logFile -Value $text -Encoding UTF8
@@ -103,7 +104,8 @@ if ($null -ne $commandLines) {
 } else {
     Show ("Port {0}" -f $Com)
 }
-Show "Close the PRM80 control software first. The radio must not transmit."
+Show "Before the test: save your channels with the PRM80 control software"
+Show "('Read from PRM80', 'Save As'), then close it. The radio must not transmit."
 Show ""
 
 # ---- Start rigctld ----------------------------------------------------------
@@ -287,7 +289,8 @@ function SetupChannels() {
     }
     $script:testChan = $script:LastChannel + 1
     if ($script:testChan -gt 99) {
-        throw "All 100 channels are used - the test needs a free channel."
+        $script:noFreeChannel = $true
+        throw "All 100 channels are used - the test needs one free channel."
     }
     if ($null -eq $commandLines) {
         Show ("Test channel {0} will be created after the last channel." -f $script:testChan)
@@ -435,6 +438,13 @@ try {
 }
 
 # ---- Summary ----------------------------------------------------------------
+
+if ($script:noFreeChannel) {
+    Show ""
+    Show "To run the test, delete one channel (e.g. the last one) in the channel manager" "Yellow"
+    Show "of the PRM80 control software and 'Write to PRM80'. After the test, load your" "Yellow"
+    Show "saved channel file and 'Write to PRM80' again to restore all channels." "Yellow"
+}
 
 $bad = @($results | Where-Object { $_.Result -eq "FAIL" }).Count
 Show ""
