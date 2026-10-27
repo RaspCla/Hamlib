@@ -363,6 +363,11 @@ function RunStandardTests() {
             ("RPRT {0}, channel {1} {2}" -f $a.Code, ($testChan + 1), $what)
     }
 
+    # Default shift last, so that the channel can be checked afterwards in the
+    # PRM80 control software: "Shift Freq." must still be 0 (= default shift)
+    TestChannel "Default shift again (shift 0)" 145600000 "-" 0 "0" 0 145600000 -1 $false
+    RoundTrip "Round trip read/write, default shift"
+
     $a = Cmd ("E {0}" -f $testChan)
     $a = Cmd "U REV 1"
     $b = Cmd "u REV"
@@ -444,7 +449,8 @@ if ($null -ne $commandLines) {
 Show ""
 if ($script:wrote -and $null -eq $commandLines) {
     Show ("Test channel {0}: check it with 'Read from PRM80' in the PRM80 control software:" -f $testChan)
-    Show "  145.6000, shift -, 600 kHz, shift enabled, no reverse, no scan lock."
+    Show "  145.6000, shift -, Shift Freq. 0 (= default shift, also after the round trip),"
+    Show "  shift enabled, no reverse, no scan lock."
     Show "Then load your backup and 'Write to PRM80' - the test channel is gone again."
     Show ""
 } elseif ($script:wrote) {
