@@ -1,0 +1,22 @@
+# Example command list for test-prm80.bat -Commands example-commands.txt
+# One rigctl command per line. Lines starting with # are headings in the log.
+# {NEW} = the channel after the last one, {LAST} = the last channel.
+# "wait 500" pauses 500 ms.
+
+# Firmware and current state
+\get_info
+f
+e
+
+# Channel 0
+E 0
+h 0 1
+
+# Reverse on the current channel (changes the frequency only on a channel
+# with shift, the firmware ignores reverse without shift)
+U REV 1
+wait 500
+f
+u REV
+U REV 0
+f
