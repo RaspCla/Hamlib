@@ -363,6 +363,10 @@ function RunStandardTests() {
             ("RPRT {0}, channel {1} {2}" -f $a.Code, ($testChan + 1), $what)
     }
 
+    # An offset that rounds to 0 would mean "default shift": must be refused
+    $a = Cmd ("H {0} 145600000 - 5000 0 0" -f $testChan)
+    Result "Offset 5 kHz refused" (-not $a.Ok) ("RPRT {0}" -f $a.Code)
+
     # Default shift last, so that the channel can be checked afterwards in the
     # PRM80 control software: "Shift Freq." must still be 0 (= default shift)
     TestChannel "Default shift again (shift 0)" 145600000 "-" 0 "0" 0 145600000 -1 $false
