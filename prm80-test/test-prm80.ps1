@@ -58,10 +58,15 @@ function Show([string]$text, [string]$color = "Gray") {
     Log $text
 }
 
+$script:testNo = 0
+
 function Result([string]$name, [bool]$ok, [string]$detail) {
     $status = "FAIL"
     $color = "Red"
     if ($ok) { $status = "OK"; $color = "Green" }
+    # numbered, so that a test can be referred to by its number
+    $script:testNo++
+    $name = "T{0:D2} {1}" -f $script:testNo, $name
     [void]$results.Add([pscustomobject]@{ Test = $name; Result = $status; Details = $detail })
     Show ("  {0,-5} {1}  {2}" -f $status, $name, $detail) $color
 }
@@ -402,6 +407,13 @@ function RunStandardTests() {
 
     $a = Cmd "t"
     Result "PTT state" ($a.Ok -and (Value $a "PTT") -eq "0") ("PTT " + (Value $a "PTT"))
+
+    # Reset: the PRM80 restarts and must answer with its prompt in time,
+    # afterwards it must answer normally again
+    $a = Cmd "\reset 1"
+    $b = Cmd "f"
+    Result "Reset (\reset 1)" ($a.Ok -and $b.Ok -and [long](Value $b "Frequency") -gt 0) `
+        ("RPRT {0}, then RX {1}" -f $a.Code, (F ([long](Value $b "Frequency"))))
 
     $a = Cmd "E 0"
 }
