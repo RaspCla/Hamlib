@@ -235,10 +235,11 @@ function TestChannel([string]$name, [long]$freq, [string]$shift, [long]$offs, [s
     Result $name $ok $detail
 }
 
-# Round trip: read the test channel, write back exactly what was read, read
-# again - the channel must not change (review of Hamlib PR #2285).
+# Round trip: read the test channel, write back exactly what was read (once
+# or several times without reading again), read again - the channel must not
+# change (review of Hamlib PR #2285).
 # "h" does not show the skip flag, so it is not checked here.
-function RoundTrip([string]$name) {
+function RoundTrip([string]$name, [int]$writes = 1) {
     $g1 = Cmd ("h {0} 1" -f $testChan)
     $rx1 = Mhz $g1 "Freq"
     $tx1 = Mhz $g1 "txFreq"
@@ -248,7 +249,10 @@ function RoundTrip([string]$name) {
     $offs = Offset $g1
     $funcs = "0"
     if ($rev1) { $funcs = "80000" }
-    $set = Cmd ("H {0} {1} {2} {3} {4} 0" -f $testChan, $rx1, $sign, $offs, $funcs)
+    for ($i = 0; $i -lt $writes; $i++) {
+        $set = Cmd ("H {0} {1} {2} {3} {4} 0" -f $testChan, $rx1, $sign, $offs, $funcs)
+        if (-not $set.Ok) { break }
+    }
     $g2 = Cmd ("h {0} 1" -f $testChan)
     $rx2 = Mhz $g2 "Freq"
     $tx2 = Mhz $g2 "txFreq"
@@ -371,6 +375,9 @@ function RunStandardTests() {
     # PRM80 control software: "Shift Freq." must still be 0 (= default shift)
     TestChannel "Default shift again (shift 0)" 145600000 "-" 0 "0" 0 145600000 -1 $false
     RoundTrip "Round trip read/write, default shift"
+    # read once, write twice: the stored shift must still be 0 (default
+    # shift) - only visible in the PRM80 control software, see the end
+    RoundTrip "Round trip read once/write twice, default shift" 2
 
     $a = Cmd ("E {0}" -f $testChan)
     $a = Cmd "U REV 1"
@@ -453,7 +460,8 @@ if ($null -ne $commandLines) {
 Show ""
 if ($script:wrote -and $null -eq $commandLines) {
     Show ("Test channel {0}: check it with 'Read from PRM80' in the PRM80 control software:" -f $testChan)
-    Show "  145.6000, shift -, Shift Freq. 0 (= default shift, also after the round trip),"
+    Show "  145.6000, shift -, Shift Freq. 0 (= default shift, also after the round trips;"
+    Show "  600.0 there means the default shift was lost),"
     Show "  shift enabled, no reverse, no scan lock."
     Show "Then load your backup and 'Write to PRM80' - the test channel is gone again."
     Show ""
